@@ -21,6 +21,7 @@
 #include "sqlquery.h"
 #include "swver.h"
 #include <iostream>
+#include <fstream>
 
 int max_depth = 100;
 
@@ -31,7 +32,7 @@ std::map<std::string, std::string> map_ref_loc;
 void printhelp(const char* str)
 {
 	printf("Usage:\n");
-	printf("%s [-s <sqdbfile> [-p <n>] [-g] [-t <term>] [-l <len>] -[e|f] [-u] [-b <path>]]  [-d] [-v] [-h] [-k <depth>]\n\n", str);
+	printf("%s [-s <sqdbfile> [-p <n>] [-g] [-t <term>] [-l <len>] -[e|f] [-u] [-b <path>]]  [-d] [-v] [-h] [-k <depth>] [-o <op_file>]\n\n", str);
 	printf("options:\n");
 	printf("  -s : CodeQuery sqlite3 db file path\n");
 	printf("  -p : parameter is a number denoted by n\n");
@@ -58,6 +59,7 @@ void printhelp(const char* str)
 	printf("  -v : version\n");
 	printf("  -h : help\n\n");
 	printf("  -k : recursively create callee graph up to specified depth(<5)\n\n");
+	printf("  -o : output file for storing function and map call graph\n\n");
 	printf("The combinations possible are -s -t -e, -s -t -f -u\n");
 	printf("The additional optional arguments are -d\n\n");
 	printf("The possible values for n are:\n");
@@ -124,12 +126,24 @@ tStr limitcstr(int limitlen, tStr str)
 		return str.substr(0,limitlen);
 }
 
-void dump_map_defn_map(sqlquery* sq, bool exact, tStr fpath){
+std::ofstream gpF;
+std::ostream* get_stream(tStr opFName){
+	if(opFName.compare("") == 0)
+		return &std::cout;
+
+	gpF.open(opFName, std::ios::out);
+	if (gpF.fail())
+		throw std::system_error(errno,std::system_category(), "failed to open "+opFName);
+	gpF.exceptions(gpF.exceptions() | std::ios::failbit | std::ifstream::badbit);
+	return &gpF;
+}
+
+void dump_map_defn_map(sqlquery* sq, bool exact, tStr fpath, std::ostream* opF){
 	sqlqueryresultlist resultlst;
-	
-	printf("{#map_name,filename,line #, isFound\nn");
+
+	*opF << "{#map_name,filename,line #, isFound\n";
 	for(const auto& elem : map_ref_loc){
-		std::cout << elem.first;
+		*opF << elem.first;
 		resultlst = sq->search(elem.first, (sqlquery::en_queryType) 0, exact, fpath);
 		if (resultlst.result_type == sqlqueryresultlist::sqlresultERROR)
 		{
@@ -140,54 +154,36 @@ void dump_map_defn_map(sqlquery* sq, bool exact, tStr fpath){
 		for(std::vector<sqlqueryresult>::iterator it = resultlst.resultlist.begin();
 			it != resultlst.resultlist.end(); it++){
 			if(it->linetext.find("SEC") != std::string::npos){
-				printf(",%s,%s,1\n", it->filepath.c_str(),it->linenum.c_str());
+				//sprintf(opFstr,",%s,%s,1\n", it->filepath.c_str(),it->linenum.c_str());
+				*opF << ","<<it->filepath.c_str()<<","<<it->linenum.c_str()<<",1"<<std::endl;
 				isF = true;
 				break;
 			}
 		}
 		if(!isF)
-			printf(",%s,0\n", elem.second.c_str());
+			*opF << ","<< elem.second.c_str()<<",0"<<std::endl;
 	
 	}
-	std::cout << "}" << std::endl;
+	*opF << "}" << std::endl;
 	return;
 }
-/*
-//dump the map along with user queries ... for multiple definitions of functions
-void dump_func_defn_map(){
-  std::map<std::string,std::vector<std::string>> print_map;
-  printf("{#funcName,count,[FileName,linenumber]\n");
-  for(const auto& elem : visited_fn_map){
-   	print_map[elem.second].push_back(elem.first);
-   }
-  for(const auto& elem : print_map){
-    std::cout<< elem.first <<","<<elem.second.size();
-	  for(const auto&inner : elem.second){
-	    std::cout << ",["<<inner<<"]";
-	  }
-	  std::cout << "\n";
-  }
-	 std::cout << "}\n";
-}
-*/
 
 //dump the map along with user queries ... for multiple definitions of functions
-void dump_func_defn_map(){
-  std::map<std::string,std::vector<std::string>> print_map;
-  printf("{#funcName,count,[FileName,linenumber]\n");
-  for(const auto& elem : visited_fn_map){
-   	print_map[elem.second].push_back(elem.first);
-   }
-  //for(const auto& elem : print_map){
-  for(const auto& key : visited_fn_order){
-
-    std::cout<< key <<","<< print_map[key].size();
-	  for(const auto&inner : print_map[key]){
-	    std::cout << ",["<<inner<<"]";
-	  }
-	  std::cout << "\n";
-  }
-	 std::cout << "}\n";
+void dump_func_defn_map(std::ostream* opF){
+	std::map<std::string,std::vector<std::string>> print_map;
+	*opF << "{#funcName,count,[FileName,linenumber]\n";
+	for(const auto& elem : visited_fn_map){
+		print_map[elem.second].push_back(elem.first);
+	}
+	//for(const auto& elem : print_map){
+	for(const auto& key : visited_fn_order){
+		*opF<< key <<","<< print_map[key].size();
+		for(const auto&inner : print_map[key]){
+			*opF << ",["<<inner<<"]";
+		}
+		*opF  << "\n";
+	}
+	*opF << "}\n";
 }
 
 void find_map_ref(std::string fn_name_str, std::string map_line, std::string map_loc){
@@ -279,7 +275,7 @@ int create_callee_tree_rec(tStr sqfn, tStr term, int intParam,
 }
 
 int create_callee_tree(tStr sqfn, tStr term, tStr param, bool exact, 
-		int depth, tStr fpath, bool full, bool debug, int limitlen) {
+		int depth, tStr fpath, bool full, bool debug, int limitlen, tStr opFName) {
 	if ((sqfn.empty())||(term.empty())||(param.empty())) return 1;
 	
 	int intParam = atoi(param.c_str()) - 1;
@@ -318,8 +314,10 @@ int create_callee_tree(tStr sqfn, tStr term, tStr param, bool exact,
 
 
 	int retVal = create_callee_tree_rec(sqfn, term, intParam, exact, 0, fpath, full, debug, limitlen, &sq);
-	dump_func_defn_map();
-	dump_map_defn_map(&sq, exact, fpath);
+	std::ostream* opF = get_stream(opFName);
+	dump_func_defn_map(opF);
+	dump_map_defn_map(&sq, exact, fpath, opF);
+
 	sq.close_dbfile();
 	return retVal;
 
@@ -443,10 +441,10 @@ int main(int argc, char *argv[])
 	bVersion = false;
 	bHelp = (argc <= 1);
 	bError = false;
-	tStr sqfn, param = "1", term, fpath = "";
+	tStr sqfn, param = "1", term, fpath = "", opFName = "";
 	int rec_depth = 1;
 
-    while ((c = getopt2(argc, argv, "s:p:gt:l:efub:dvhk:")) != -1)
+    while ((c = getopt2(argc, argv, "s:p:gt:l:efub:dvhk:o:")) != -1)
     {
 		switch(c)
 		{
@@ -490,6 +488,10 @@ int main(int argc, char *argv[])
 				bTree = true;
 				rec_depth = atoi(optarg);
 				break;
+			case 'o':
+				opFName = optarg;
+				std::cout<<"got: "<<opFName<< "\n";
+				break;
 			case 'l':
 				limitlen = atoi(optarg);
 				break;
@@ -506,45 +508,47 @@ int main(int argc, char *argv[])
 				break;
 		}
     }
-	if (bVersion)
-	{
-		printlicense();
-		return 0;
-	}
-	if (bHelp || bError)
-	{
-		printhelp(extract_filename(argv[0]));
-		return (bError ? 1 : 0);
-	}
-	if (!bSqlite)
-	{
-		printf("Error: -s is required.\n");
-		bError = true;
-	}
-	if (!bTerm)
-	{
-		printf("Error: -t is required.\n");
-		bError = true;
-	}
-	if (bError)
-	{
-		printhelp(extract_filename(argv[0]));
-		return 1;
-	}
-	if (bSqlite && bTerm && !bTree)
-	{
-		bError = process_query(sqfn, term, param, bExact, bFull, bDebug, limitlen, bGraph, fpath) > 0;
-	}
-	if (bSqlite && bTerm && bTree)
-	{
-		bError = create_callee_tree(sqfn, term, param, bExact, rec_depth, fpath, bFull, bDebug, limitlen) > 0;
-	}
+    if (bVersion)
+    {
+	    printlicense();
+	    return 0;
+    }
+    if (bHelp || bError)
+    {
+	    printhelp(extract_filename(argv[0]));
+	    return (bError ? 1 : 0);
+    }
+    if (!bSqlite)
+    {
+	    printf("Error: -s is required.\n");
+	    bError = true;
+    }
+    if (!bTerm)
+    {
+	    printf("Error: -t is required.\n");
+	    bError = true;
+    }
+
+    if (bError)
+    {
+	    printhelp(extract_filename(argv[0]));
+	    return 1;
+    }
+    if (bSqlite && bTerm && !bTree)
+    {
+	    bError = process_query(sqfn, term, param, bExact, bFull, bDebug, limitlen, bGraph, fpath) > 0;
+    }
+    if (bSqlite && bTerm && bTree)
+    {
+	    bError = create_callee_tree(sqfn, term, param, bExact, rec_depth, fpath, bFull, bDebug, limitlen, opFName) > 0;
+    }
 
 
-	if (bError)
-	{
-		printhelp(extract_filename(argv[0]));
-	}
-	return bError;
+    if (bError)
+    {
+	    printhelp(extract_filename(argv[0]));
+    }
+
+    return bError;
 }
 
