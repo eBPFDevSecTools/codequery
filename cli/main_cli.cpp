@@ -27,6 +27,7 @@ int max_depth = 100;
 
 std::map<std::string, std::string> visited_fn_map;
 std::vector<std::string> visited_fn_order;
+std::vector<std::string> prn_map;
 std::map<std::string, std::string> map_ref_loc;
 
 void printhelp(const char* str)
@@ -176,6 +177,7 @@ void dump_func_defn_map(std::ostream* opF){
 		print_map[elem.second].push_back(elem.first);
 	}
 	//for(const auto& elem : print_map){
+	visited_fn_order.erase(std::unique(visited_fn_order.begin(), visited_fn_order.end()), visited_fn_order.end());
 	for(const auto& key : visited_fn_order){
 		*opF<< key <<","<< print_map[key].size();
 		for(const auto&inner : print_map[key]){
