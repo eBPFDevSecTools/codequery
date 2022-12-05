@@ -29,6 +29,7 @@ std::map<std::string, std::string> visited_fn_map;
 std::vector<std::string> visited_fn_order;
 std::vector<std::string> prn_map;
 std::map<std::string, std::string> map_ref_loc;
+std::set<std::string> set_of_seen_fn;
 
 void printhelp(const char* str)
 {
@@ -235,9 +236,9 @@ void make_fn_defn_entry(tStr term, bool exact, int depth, tStr fpath,
 int create_callee_tree_rec(tStr sqfn, tStr term, int intParam, 
 		bool exact, int depth, tStr fpath,
 		bool full, bool debug, int limitlen, sqlquery* sq) {
-	if(depth == max_depth)
+	if(depth >= max_depth)
 		return 0;
-
+	
 	int retVal = 0;
 	tStr lstr;
 	tVecStr grpxml, grpdot;
@@ -245,6 +246,8 @@ int create_callee_tree_rec(tStr sqfn, tStr term, int intParam,
 	tStr errstr;
 	sqlqueryresultlist resultlst;
 
+	set_of_seen_fn.insert(term);
+	std::cout << "seen: "<<term;
 	resultlst = sq->search(term, (sqlquery::en_queryType) intParam, exact, fpath);
 	if (resultlst.result_type == sqlqueryresultlist::sqlresultERROR)
 	{
@@ -258,6 +261,8 @@ int create_callee_tree_rec(tStr sqfn, tStr term, int intParam,
 		lstr = limitcstr(limitlen, it->linetext);
 		if(resultlst.result_type == sqlqueryresultlist::sqlresultFULL)
 		{
+			if(set_of_seen_fn.find(it->symname.c_str()) != set_of_seen_fn.end())
+				continue;
 			std::string fn_name_str(it->symname.c_str());
 			std::string map_line(lstr.c_str());
 			find_map_ref(fn_name_str, map_line, it->filepath+","+it->linenum);
