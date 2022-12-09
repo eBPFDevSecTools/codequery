@@ -271,7 +271,8 @@ int create_callee_tree_rec(tStr sqfn, tStr term, int intParam,
 				(full ? it->filepath.c_str() : it->filename.c_str()),
 				it->linenum.c_str());*/
 			if(set_of_seen_fn.find(it->symname.c_str()) == set_of_seen_fn.end())
-				create_callee_tree_rec(sqfn, it->symname.c_str(), intParam, exact, depth +1, fpath, full, debug, limitlen, sq);
+				create_callee_tree_rec(sqfn, it->symname.c_str(), intParam, 
+					exact, depth +1, fpath, full, debug, limitlen, sq);
 		}
 	}
 	make_fn_defn_entry(term, exact, depth, fpath, full, debug, limitlen, sq);
