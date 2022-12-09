@@ -189,11 +189,30 @@ void dump_func_defn_map(std::ostream* opF){
 	*opF << "}\n";
 }
 
-void find_map_ref(std::string fn_name_str, std::string map_line, std::string map_loc){
-	if(fn_name_str.compare("bpf_map_update_elem") == 0||
-			fn_name_str.compare("bpf_map_lookup_elem") == 0){
-			unsigned first = map_line.find('(')+1;
-		unsigned last = map_line.find(',');
+std::map<tStr, tStr> my_bpf_helper_map;
+void create_bpf_helper_func_list(void){
+	my_bpf_helper_map.insert(std::pair<tStr, tStr>("bpf_map_update_elem","bpf_map_update_elem"));
+	my_bpf_helper_map.insert(std::pair<tStr, tStr>("bpf_map_lookup_elem","bpf_map_lookup_elem"));
+	my_bpf_helper_map.insert(std::pair<tStr, tStr>("bpf_map_delete_elem","bpf_map_delete_elem"));
+	my_bpf_helper_map.insert(std::pair<tStr, tStr>("bpf_sock_map_update","bpf_sock_map_update"));
+	my_bpf_helper_map.insert(std::pair<tStr, tStr>("bpf_map_pop_elem","bpf_map_pop_elem"));
+	my_bpf_helper_map.insert(std::pair<tStr, tStr>("bpf_map_push_elem","bpf_map_push_elem"));
+	my_bpf_helper_map.insert(std::pair<tStr, tStr>("bpf_map_peek_elem","bpf_map_peek_elem"));
+	my_bpf_helper_map.insert(std::pair<tStr, tStr>("map_update_elem","map_update_elem"));
+	my_bpf_helper_map.insert(std::pair<tStr, tStr>("map_lookup_elem","map_lookup_elem"));
+	my_bpf_helper_map.insert(std::pair<tStr, tStr>("map_delete_elem","map_delete_elem"));
+	my_bpf_helper_map.insert(std::pair<tStr, tStr>("sock_map_update","sock_map_update"));
+	my_bpf_helper_map.insert(std::pair<tStr, tStr>("map_pop_elem","map_pop_elem"));
+	my_bpf_helper_map.insert(std::pair<tStr, tStr>("map_push_elem","map_push_elem"));
+	my_bpf_helper_map.insert(std::pair<tStr, tStr>("map_peek_elem","map_peek_elem"));
+}
+void inline find_map_ref(std::string fn_name_str, std::string map_line, std::string map_loc){
+	if(my_bpf_helper_map.find(fn_name_str) != my_bpf_helper_map.end())
+	{
+
+		unsigned pos = map_line.find(fn_name_str)+1;
+		unsigned first = map_line.find('(', pos)+1;
+		unsigned last = map_line.find(',',first);
 		std::string strNew = map_line.substr(first,last-first);
 		strNew.erase(std::remove(strNew.begin(), strNew.end(), '&'), strNew.end());
 		strNew.erase(std::remove(strNew.begin(), strNew.end(), ' '), strNew.end());
@@ -450,7 +469,7 @@ int main(int argc, char *argv[])
 	bError = false;
 	tStr sqfn, param = "1", term, fpath = "", opFName = "";
 	int rec_depth = 1;
-
+	create_bpf_helper_func_list();
     while ((c = getopt2(argc, argv, "s:p:gt:l:efub:dvhk:o:")) != -1)
     {
 		switch(c)
