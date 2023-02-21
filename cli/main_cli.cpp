@@ -283,12 +283,13 @@ int create_callee_tree_rec(tStr sqfn, tStr term, int intParam,
 			std::string fn_name_str(it->symname.c_str());
 			std::string map_line(lstr.c_str());
 			find_map_ref(fn_name_str, map_line, it->filepath+","+it->linenum);
-			/*printf("%.*s ", depth, "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t");
+			//printf("%.*s ", depth, "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t");
 			//find bpf_map_details
-			printf("%s\t CALLSITE \t%s:%s\n", 
+			printf("LOG: {\"caller\": %s, \"callee\": %s, \"callsite\": %s:%s},\n", 
+					term.c_str(),
 				it->symname.c_str(),
 				(full ? it->filepath.c_str() : it->filename.c_str()),
-				it->linenum.c_str());*/
+				it->linenum.c_str());
 			if(set_of_seen_fn.find(it->symname.c_str()) == set_of_seen_fn.end())
 				create_callee_tree_rec(sqfn, it->symname.c_str(), intParam, 
 					exact, depth +1, fpath, full, debug, limitlen, sq);
