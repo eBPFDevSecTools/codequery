@@ -62,6 +62,7 @@ void printhelp(const char* str)
 	printf("  -h : help\n\n");
 	printf("  -k : recursively create callee graph up to specified depth(<5)\n\n");
 	printf("  -o : output file for storing function and map call graph\n\n");
+	printf("  -z : output file for storing function call info\n\n");
 	printf("The combinations possible are -s -t -e, -s -t -f -u\n");
 	printf("The additional optional arguments are -d\n\n");
 	printf("The possible values for n are:\n");
@@ -128,16 +129,14 @@ tStr limitcstr(int limitlen, tStr str)
 		return str.substr(0,limitlen);
 }
 
-std::ofstream gpF;
-std::ostream* get_stream(tStr opFName){
+std::ostream* get_stream(tStr opFName, std::ofstream* gpF){
 	if(opFName.compare("") == 0)
 		return &std::cout;
-
-	gpF.open(opFName, std::ios::out);
-	if (gpF.fail())
+	gpF->open(opFName, std::ios::out);
+	if (gpF->fail())
 		throw std::system_error(errno,std::system_category(), "failed to open "+opFName);
-	gpF.exceptions(gpF.exceptions() | std::ios::failbit | std::ifstream::badbit);
-	return &gpF;
+	gpF->exceptions(gpF->exceptions() | std::ios::failbit | std::ifstream::badbit);
+	return gpF;
 }
 
 void dump_map_defn_map(sqlquery* sq, bool exact, tStr fpath, std::ostream* opF){
@@ -254,7 +253,7 @@ void make_fn_defn_entry(tStr term, bool exact, int depth, tStr fpath,
 }
 int create_callee_tree_rec(tStr sqfn, tStr term, int intParam, 
 		bool exact, int depth, tStr fpath,
-		bool full, bool debug, int limitlen, sqlquery* sq) {
+		bool full, bool debug, int limitlen, sqlquery* sq, std::ostream* opFCG) {
 	if(depth >= max_depth)
 		return 0;
 	
@@ -266,7 +265,6 @@ int create_callee_tree_rec(tStr sqfn, tStr term, int intParam,
 	sqlqueryresultlist resultlst;
 
 	set_of_seen_fn.insert(term);
-	std::cout << "seen: "<<term;
 	resultlst = sq->search(term, (sqlquery::en_queryType) intParam, exact, fpath);
 	if (resultlst.result_type == sqlqueryresultlist::sqlresultERROR)
 	{
@@ -285,14 +283,18 @@ int create_callee_tree_rec(tStr sqfn, tStr term, int intParam,
 			find_map_ref(fn_name_str, map_line, it->filepath+","+it->linenum);
 			//printf("%.*s ", depth, "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t");
 			//find bpf_map_details
-			printf("LOG: {\"caller\": %s, \"callee\": %s, \"callsite\": %s:%s},\n", 
-					term.c_str(),
+			char buf[5001];
+			snprintf(buf, 5000,  
+				"{\"caller\": \"%s\", \"callee\": \"%s\", \"callsite_path\": \"%s\", \"callsite_file\": \"%s\", \"callsite_line\":\"%s\"},\n", 
+				term.c_str(),
 				it->symname.c_str(),
-				(full ? it->filepath.c_str() : it->filename.c_str()),
+				 it->filepath.c_str() , 
+				 it->filename.c_str(),
 				it->linenum.c_str());
+			*opFCG << buf;
 			if(set_of_seen_fn.find(it->symname.c_str()) == set_of_seen_fn.end())
 				create_callee_tree_rec(sqfn, it->symname.c_str(), intParam, 
-					exact, depth +1, fpath, full, debug, limitlen, sq);
+					exact, depth +1, fpath, full, debug, limitlen, sq, opFCG);
 		}
 	}
 	make_fn_defn_entry(term, exact, depth, fpath, full, debug, limitlen, sq);
@@ -302,7 +304,7 @@ int create_callee_tree_rec(tStr sqfn, tStr term, int intParam,
 }
 
 int create_callee_tree(tStr sqfn, tStr term, tStr param, bool exact, 
-		int depth, tStr fpath, bool full, bool debug, int limitlen, tStr opFName) {
+		int depth, tStr fpath, bool full, bool debug, int limitlen, tStr opFName, tStr opFCGName) {
 	if ((sqfn.empty())||(term.empty())||(param.empty())) return 1;
 	
 	int intParam = atoi(param.c_str()) - 1;
@@ -340,8 +342,11 @@ int create_callee_tree(tStr sqfn, tStr term, tStr param, bool exact,
 	}
 
 
-	int retVal = create_callee_tree_rec(sqfn, term, intParam, exact, 0, fpath, full, debug, limitlen, &sq);
-	std::ostream* opF = get_stream(opFName);
+	std::ofstream gpF;
+	std::ofstream gpFCG;
+	std::ostream* opF = get_stream(opFName, &gpF);
+	std::ostream* opFCG = get_stream(opFCGName, &gpFCG);
+	int retVal = create_callee_tree_rec(sqfn, term, intParam, exact, 0, fpath, full, debug, limitlen, &sq, opFCG);
 	dump_func_defn_map(opF);
 	dump_map_defn_map(&sq, exact, fpath, opF);
 
@@ -468,10 +473,10 @@ int main(int argc, char *argv[])
 	bVersion = false;
 	bHelp = (argc <= 1);
 	bError = false;
-	tStr sqfn, param = "1", term, fpath = "", opFName = "";
+	tStr sqfn, param = "1", term, fpath = "", opFName = "", opFCGName = "";
 	int rec_depth = 1;
 	create_bpf_helper_func_list();
-    while ((c = getopt2(argc, argv, "s:p:gt:l:efub:dvhk:o:")) != -1)
+    while ((c = getopt2(argc, argv, "s:p:gt:l:efub:dvhk:o:z:")) != -1)
     {
 		switch(c)
 		{
@@ -517,7 +522,9 @@ int main(int argc, char *argv[])
 				break;
 			case 'o':
 				opFName = optarg;
-				std::cout<<"got: "<<opFName<< "\n";
+				break;
+			case 'z':
+				opFCGName = optarg;
 				break;
 			case 'l':
 				limitlen = atoi(optarg);
@@ -567,7 +574,7 @@ int main(int argc, char *argv[])
     }
     if (bSqlite && bTerm && bTree)
     {
-	    bError = create_callee_tree(sqfn, term, param, bExact, rec_depth, fpath, bFull, bDebug, limitlen, opFName) > 0;
+	    bError = create_callee_tree(sqfn, term, param, bExact, rec_depth, fpath, bFull, bDebug, limitlen, opFName, opFCGName) > 0;
     }
 
 
